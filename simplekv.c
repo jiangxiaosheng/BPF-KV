@@ -119,10 +119,11 @@ int terminate(void) {
     return 0;
 }
 
-void initialize_workers(WorkerArg *args, size_t total_op_count, char *db_path, int use_xrp, int bpf_fd) {
+void initialize_workers(WorkerArg *args, size_t total_op_count, char *db_path, int use_xrp, int bpf_fd, double target_rate) {
     size_t offset = 0;
     args[0].latency_arr = (size_t *) malloc(total_op_count * sizeof(size_t));
     BUG_ON(args[0].latency_arr == NULL);
+    target_rate /= worker_num;
     for (size_t i = 0; i < worker_num; i++) {
         args[i].index = i;
         args[i].op_count = (total_op_count / worker_num) + (i < total_op_count % worker_num);
@@ -133,6 +134,7 @@ void initialize_workers(WorkerArg *args, size_t total_op_count, char *db_path, i
         args[i].bpf_fd = bpf_fd;
         args[i].latency_arr = args[0].latency_arr + offset;
         args[i].should_quit = false;
+        args[i].submit_interval = 1e6 / target_rate;
         offset += args[i].op_count;
     }
 }
@@ -161,7 +163,7 @@ void terminate_workers(pthread_t *tids, WorkerArg *args, int runtime) {
 
 int run(char *db_path, size_t layer_num, size_t request_num, size_t thread_num,
         int runtime, int use_xrp, int bpf_fd, size_t cache_level,
-        bool pin_threads) {
+        bool pin_threads, double target_rate) {
 
     printf("Running benchmark with %ld layers, %ld requests, and %ld thread(s)\n",
                 layer_num, request_num, thread_num);
@@ -174,7 +176,7 @@ int run(char *db_path, size_t layer_num, size_t request_num, size_t thread_num,
     pthread_t tids[worker_num];
     WorkerArg args[worker_num];
 
-    initialize_workers(args, request_num, db_path, use_xrp, bpf_fd);
+    initialize_workers(args, request_num, db_path, use_xrp, bpf_fd, target_rate);
 
     clock_gettime(CLOCK_MONOTONIC, &start);
     srandom(start.tv_nsec ^ start.tv_sec);
@@ -225,8 +227,15 @@ int run(char *db_path, size_t layer_num, size_t request_num, size_t thread_num,
 void *subtask(void *args) {
     WorkerArg *r = (WorkerArg*)args;
     struct timespec tps, tpe;
+    struct timespec subtask_tps;
+    long wait_time;
     srand(r->index);
     printf("thread %ld op_count %ld\n", r->index, r->op_count);
+    /* 
+     * Record the subtask start time to tag each request's desired start time
+     * for rate limiting.
+     */
+    clock_gettime(CLOCK_MONOTONIC, &subtask_tps);
     for (size_t i = 0; i < r->op_count; i++) {
         if (atomic_load_explicit(&r->should_quit, memory_order_relaxed)) {
             break;
@@ -277,6 +286,12 @@ void *subtask(void *args) {
             printf("Error! key: %lu val: %s thrd: %ld\n", key, buf, r->index);
         }
         r->op_completed++;
+
+        /* Wait if rate limiting is enabled */
+        wait_time = i * r->submit_interval - (tpe.tv_sec - subtask_tps.tv_sec) * 1000000 - (tpe.tv_nsec - subtask_tps.tv_nsec) / 1000;
+        if (r->submit_interval > 0 && wait_time > 0) {
+            usleep(wait_time);
+        }
     }
     return NULL;
 }

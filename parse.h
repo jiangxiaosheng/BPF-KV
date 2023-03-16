@@ -29,6 +29,7 @@ struct GetArgs {
     size_t cache_level;
     size_t database_layers;
     bool pin_threads;
+    double target_rate;
 };
 
 struct RangeArgs {

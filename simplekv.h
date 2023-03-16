@@ -37,11 +37,13 @@ typedef struct {
     int bpf_fd;
     size_t *latency_arr;
     atomic_bool should_quit;
+    double submit_interval; /* microsecond */
 } WorkerArg;
 
 int get_handler(char *db_path, int flag);
 
-int run(char *db_path, size_t layer_num, size_t request_num, size_t thread_num, int runtime, int use_xrp, int bpf_fd, size_t cache_level, bool pin_threads);
+int run(char *db_path, size_t layer_num, size_t request_num, size_t thread_num, int runtime, int use_xrp, int bpf_fd, size_t cache_level, bool pin_threads,
+        double target_rate);
 
 void *subtask(void *args);
 
@@ -53,7 +55,7 @@ void read_log(ptr__t ptr, Log *log, int db_handler);
 
 int initialize(size_t layer_num, int mode, char *db_path);
 
-void initialize_workers(WorkerArg *args, size_t total_op_count, char *db_path, int use_xrp, int bpf_fd);
+void initialize_workers(WorkerArg *args, size_t total_op_count, char *db_path, int use_xrp, int bpf_fd, double target_rate);
 
 void start_workers(pthread_t *tids, WorkerArg *args, bool pin_threads);
 

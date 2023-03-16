@@ -37,6 +37,7 @@ static struct argp_option get_opts[] = {
         { "runtime" , 'u', "RUNTIME", 0, "Runtime in seconds." },
         { "bpf-fd", 'b', "BPF_FD", 0, "File descriptor of the BPF program to use." },
         { "pin-threads", 'p', 0, 0, "Pin threads per cpu." },
+        { "target-rate", 'a', "TARGET_RATE", 0, "Target rate (reqs/sec)." },
         { 0 }
 };
 static char get_doc[] = "Run the benchmark to retrieve single keys from the database";
@@ -108,6 +109,15 @@ static int _parse_get_opts(int key, char *arg, struct argp_state *state) {
 
         case 'p':
             st->pin_threads = true;
+            break;
+        
+        case 'a': {
+            char *endptr = NULL;
+            st->target_rate = strtod(arg, &endptr);
+            if (endptr != NULL && *endptr != '\0') {
+                argp_failure(state, 1, 0, "invalid target rate");
+            }
+        }
             break;
 
         case ARGP_KEY_ARG:
